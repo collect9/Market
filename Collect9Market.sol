@@ -156,11 +156,6 @@ contract Collect9Market is Ownable, ReentrancyGuard {
         listedTokens[_tokenId] = true;
     }
 
-    function test(uint256 _tokenId) public view 
-    returns (bool) {
-        return listedTokens[_tokenId];
-    }
-
     /**
      * Function that handles purchase. Amount in ETH is calculated, 
      * user must send and then token is sent to user.
