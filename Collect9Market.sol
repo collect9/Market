@@ -25,7 +25,7 @@ contract Collect9Market is Ownable, ReentrancyGuard {
 
     event TokenBought(
         address indexed buyer,
-        address indexed nftAddress,
+        address indexed origin,
         uint256 indexed tokenId,
         uint256 price
     );
@@ -148,14 +148,17 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     function listToken(uint256 _tokenId, uint64[2] calldata _usdcRange) external
     onlyOwner
     validPriceRange(_usdcRange) {
-        if (listedTokens[_tokenId]) {
-            revert("Token already listed.");
-        }
+        require(!listedTokens[_tokenId], "Token already listed.");
         tokenInfo[_tokenId] = TokenInfo(
             _usdcRange[0], _usdcRange[1],
             uint128(block.timestamp)
         );
-        listedTokens[_tokenId] == true;
+        listedTokens[_tokenId] = true;
+    }
+
+    function test(uint256 _tokenId) public view 
+    returns (bool) {
+        return listedTokens[_tokenId];
     }
 
     /**
