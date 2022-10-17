@@ -171,6 +171,7 @@ contract Collect9Market is Ownable, ReentrancyGuard {
         require(success, "Failed to send ETH.");
         delete listedTokens[_tokenId];
         delete tokenInfo[_tokenId];
+        require(!listedTokens[_tokenId], "Failed to remove token listing.");
         IERC721(_contractAddress).safeTransferFrom(_buyerAddress, msg.sender, _tokenId);
         emit TokenBought(msg.sender, _buyerAddress, _tokenId, msg.value);
     }
