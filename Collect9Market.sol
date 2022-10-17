@@ -13,12 +13,12 @@ struct TokenInfo {
     uint128 listTimeStamp;
 }
 
+
 contract Collect9Market is Ownable, ReentrancyGuard {
 
     AggregatorV3Interface internal priceFeed;
     address payable public Owner;
     uint256 minEthPrice = 100000000000000000;
-    uint256 balance = 0;
 
     mapping(uint256 => bool) listedTokens;
     mapping(uint256 => TokenInfo) tokenInfo;
@@ -34,27 +34,30 @@ contract Collect9Market is Ownable, ReentrancyGuard {
      * Modifier to make sure token is listed.
      */
     modifier tokenExists(uint256 _tokenId) {
-        //require(listedTokens[_tokenId], "Token not listed.");
+        require(listedTokens[_tokenId], "Token not listed.");
         _;
     }
 
     /**
      * Modifier to prevent accidental bad price entries.
      */
-    modifier validPriceRange(uint64[2] calldata _usdcRange) {
-        require(_usdcRange[0] > 50, "Min USD price too low.");
-        require(_usdcRange[1] < 10000000, "Max USD price too high.");
+    modifier validPriceRange(uint64[2] calldata _usdRange) {
+        require(_usdRange[1] > _usdRange[0], "High price must be greater than low.");
+        require(_usdRange[0] > 50, "Min USD price too low.");
+        require(_usdRange[1] < 10000000, "Max USD price too high.");
         _;
     }
 
     /**
-     * Network: Goerli
      * Aggregator: ETH/USD
+     * Network: Goerli
      * Address: 0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e
+     * Network: Mainnet
+     * Address: 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
      */
-    constructor() {
-        priceFeed = AggregatorV3Interface(0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e);
-        Owner = payable(msg.sender); 
+    constructor(address _priceFeedAddress) {
+        setPriceFeed(_priceFeedAddress);
+        Owner = payable(msg.sender);
     }
 
     /**
@@ -70,15 +73,6 @@ contract Collect9Market is Ownable, ReentrancyGuard {
             return _max;
         }
         return _price;
-    }
-
-    /**
-     * Gets the balance of the contract.
-     */
-    function getBalance() public view
-    onlyOwner
-    returns (uint256) {
-        return balance;
     }
 
     /**
@@ -145,10 +139,15 @@ contract Collect9Market is Ownable, ReentrancyGuard {
      * Add the token to the available list with lower and upper 
      * bound prices in both USDC and ETH.
      */
-    function listToken(uint256 _tokenId, uint64[2] calldata _usdcRange) external
+    function listToken(address _contractAddress, address _minterAddress, uint256 _tokenId, uint64[2] calldata _usdcRange) external
     onlyOwner
     validPriceRange(_usdcRange) {
         require(!listedTokens[_tokenId], "Token already listed.");
+
+        address tokenOwner = IERC721(_contractAddress).ownerOf(_tokenId);
+        require(tokenOwner != address(0), "Token does not exist in NFT contract.");
+        require(tokenOwner == _minterAddress, "Token owner not minter.");
+
         tokenInfo[_tokenId] = TokenInfo(
             _usdcRange[0], _usdcRange[1],
             uint128(block.timestamp)
@@ -162,18 +161,18 @@ contract Collect9Market is Ownable, ReentrancyGuard {
      * The token's contract address must have this address approved 
      * to make token transfers from it.
      */
-    function purchaseToken(address _address, uint256 _tokenId) external payable
+    function purchaseToken(address _buyerAddress, address _contractAddress, uint256 _tokenId) external payable
     tokenExists(_tokenId)
     nonReentrant {
         uint256 ethPrice = getTokenETHPrice(_tokenId);
-        require(ethPrice > minEthPrice, "ETH price too low, contact Collect9 admin to adjust.");
+        require(ethPrice > minEthPrice, "ETH price too low, contact Collect9 admin for minEthPrice adjustment.");
         require(msg.value == ethPrice, "Incorrect amount of ETH.");
-        (bool success,) = Owner.call{value: msg.value}("");
+        (bool success,) = Owner.call{value: msg.value}(""); //This goes to the address holding the NFT
         require(success, "Failed to send ETH.");
-        balance += msg.value;
-        removeListing(_tokenId);
-        IERC721(_address).safeTransferFrom(address(this), msg.sender, _tokenId);
-        emit TokenBought(msg.sender, _address, _tokenId, msg.value);
+        delete listedTokens[_tokenId];
+        delete tokenInfo[_tokenId];
+        IERC721(_contractAddress).safeTransferFrom(_buyerAddress, msg.sender, _tokenId);
+        emit TokenBought(msg.sender, _buyerAddress, _tokenId, msg.value);
     }
 
     /**
@@ -184,6 +183,14 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     tokenExists(_tokenId) {
         delete listedTokens[_tokenId];
         delete tokenInfo[_tokenId];
+    }
+
+    /**
+     * Implemented in case the price feed address changes in the future.
+     */
+    function setPriceFeed(address _address) public
+    onlyOwner {
+        priceFeed = AggregatorV3Interface(_address);
     }
 
     /**
@@ -207,24 +214,5 @@ contract Collect9Market is Ownable, ReentrancyGuard {
             _usdcRange[0], _usdcRange[1],
             uint128(block.timestamp)
         );
-    }
-
-    /**
-     * Withdraw ETH held by contract to contract owner.
-     */
-    function withdraw(uint256 _amount) external
-    onlyOwner {
-        require(balance > 0, "Balance 0.");
-        require(_amount < balance, "Amount less than balance.");
-        if (_amount == 0) {
-            (bool success, ) = msg.sender.call{value: balance}("");
-            require(success, "Full withdrawal failed.");
-            balance = 0;
-        }
-        else {
-            (bool success, ) = msg.sender.call{value: _amount}("");
-            require(success, "Partial withdrawal failed.");
-            balance -= _amount;
-        }
     }
 }
