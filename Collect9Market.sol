@@ -11,9 +11,14 @@ struct TokenInfo {
     uint128 listTimeStamp;
 }
 
+/*
+ * This contract is meant to be deployed by the same address (Owner) that 
+ * deployed the NFT minting contract and received the newly minted NFTs. 
+ */
 contract Collect9Market is Ownable, ReentrancyGuard {
     AggregatorV3Interface internal priceFeed;
     address payable public Owner;
+    address NFTsAddress = 0x1113A1bE39ADe988213766599e6371B1ebc7aa99;
     uint256 minEthPrice = 100000000000000000;
     uint8 priceRate = 50;
 
@@ -135,7 +140,9 @@ contract Collect9Market is Ownable, ReentrancyGuard {
 
     /**
      * Add the token to the available list with lower and upper 
-     * bound prices in both USDC and ETH.
+     * bound prices in both USDC and ETH. The require statements 
+     * that check if the token exists may not be necessary as ERC721() 
+     * kicks out with its own error if the token doesn't exist.
      */
     function listToken(address _contractAddress, address _minterAddress, uint256 _tokenId, uint64[2] calldata _usdcRange) external
     onlyOwner
@@ -143,7 +150,7 @@ contract Collect9Market is Ownable, ReentrancyGuard {
         require(!listedTokens[_tokenId], "Token already listed.");
         address tokenOwner = IERC721(_contractAddress).ownerOf(_tokenId);
         require(tokenOwner != address(0), "Token does not exist in NFT contract.");
-        require(tokenOwner == _minterAddress, "Token owner not minter.");
+        require(tokenOwner == _minterAddress, "Token owner not original minter.");
         tokenInfo[_tokenId] = TokenInfo(
             _usdcRange[0], _usdcRange[1],
             uint128(block.timestamp)
@@ -161,9 +168,10 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     tokenExists(_tokenId)
     nonReentrant {
         uint256 ethPrice = getTokenETHPrice(_tokenId);
+        require(Owner == _minterAddress, "Original minter not market contract owner.");
         require(ethPrice > minEthPrice, "ETH price too low, contact Collect9 for minEthPrice adjustment.");
         require(msg.value == ethPrice, "Incorrect amount of ETH.");
-        (bool success,) = Owner.call{value: msg.value}(""); //This goes to the address holding the NFT
+        (bool success,) = Owner.call{value: msg.value}("");
         require(success, "Failed to send ETH.");
         delete listedTokens[_tokenId];
         delete tokenInfo[_tokenId];
