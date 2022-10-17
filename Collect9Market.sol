@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
-
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-
 
 struct TokenInfo {
     uint64 usdMin; // Lowest bound price
@@ -13,12 +11,11 @@ struct TokenInfo {
     uint128 listTimeStamp;
 }
 
-
 contract Collect9Market is Ownable, ReentrancyGuard {
-
     AggregatorV3Interface internal priceFeed;
     address payable public Owner;
     uint256 minEthPrice = 100000000000000000;
+    uint8 priceRate = 50;
 
     mapping(uint256 => bool) listedTokens;
     mapping(uint256 => TokenInfo) tokenInfo;
@@ -108,14 +105,15 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     /**
      * Returns the token price in USDC integer format.
      * The front-end can display this result as-is.
+     * Price bounds are constrained as a fail-safe mechanism.
      */
     function getTokenUSDPrice(uint256 _tokenId) internal view
     tokenExists(_tokenId)
     returns (uint256 tokenUSDPrice) {
         uint256 dt = block.timestamp - tokenInfo[_tokenId].listTimeStamp;
-        uint256 adjuster = (31536000 - dt + 86400) * 50 / 31536000 + 50;
-        tokenUSDPrice = tokenInfo[_tokenId].usdMax * adjuster / 100;
-        // Constrain to bounds instead of reverting
+        uint256 adjuster = (31536000 - dt + 86400) * 400 / 31536000 + 400;
+        tokenUSDPrice = tokenInfo[_tokenId].usdMax * adjuster / 800;
+        // Check and if necessary constrain to price bounds.
         tokenUSDPrice = constrainPrice(
             tokenUSDPrice,
             tokenInfo[_tokenId].usdMin,
@@ -143,11 +141,9 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     onlyOwner
     validPriceRange(_usdcRange) {
         require(!listedTokens[_tokenId], "Token already listed.");
-
         address tokenOwner = IERC721(_contractAddress).ownerOf(_tokenId);
         require(tokenOwner != address(0), "Token does not exist in NFT contract.");
         require(tokenOwner == _minterAddress, "Token owner not minter.");
-
         tokenInfo[_tokenId] = TokenInfo(
             _usdcRange[0], _usdcRange[1],
             uint128(block.timestamp)
@@ -165,7 +161,7 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     tokenExists(_tokenId)
     nonReentrant {
         uint256 ethPrice = getTokenETHPrice(_tokenId);
-        require(ethPrice > minEthPrice, "ETH price too low, contact Collect9 admin for minEthPrice adjustment.");
+        require(ethPrice > minEthPrice, "ETH price too low, contact Collect9 for minEthPrice adjustment.");
         require(msg.value == ethPrice, "Incorrect amount of ETH.");
         (bool success,) = Owner.call{value: msg.value}(""); //This goes to the address holding the NFT
         require(success, "Failed to send ETH.");
@@ -184,6 +180,17 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     tokenExists(_tokenId) {
         delete listedTokens[_tokenId];
         delete tokenInfo[_tokenId];
+    }
+
+    /**
+     * Reset the listing time for a token. This will reset the 
+     * price drift. If done on accident, this can be partially 
+     * fixed by calling updateTokenPrices().
+     */
+    function resetListingTime(uint256 _tokenId) external
+    onlyOwner
+    tokenExists(_tokenId) {
+        tokenInfo[_tokenId].listTimeStamp = uint128(block.timestamp);
     }
 
     /**
@@ -207,13 +214,11 @@ contract Collect9Market is Ownable, ReentrancyGuard {
     /**
      * Update the bound prices for a listed token.
      */
-    function updateToken(uint256 _tokenId, uint64[2] calldata _usdcRange) external
+    function updateTokenPrices(uint256 _tokenId, uint64[2] calldata _usdcRange) external
     onlyOwner
     tokenExists(_tokenId)
     validPriceRange(_usdcRange) {
-        tokenInfo[_tokenId] = TokenInfo(
-            _usdcRange[0], _usdcRange[1],
-            uint128(block.timestamp)
-        );
+        tokenInfo[_tokenId].usdMin = _usdcRange[0];
+        tokenInfo[_tokenId].usdMax = _usdcRange[1];
     }
 }
