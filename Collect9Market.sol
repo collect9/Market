@@ -161,7 +161,7 @@ contract Collect9Market is Ownable, ReentrancyGuard {
      * The token's contract address must have this address approved 
      * to make token transfers from it.
      */
-    function purchaseToken(address _buyerAddress, address _contractAddress, uint256 _tokenId) external payable
+    function purchaseToken(address _contractAddress, address _minterAddress, uint256 _tokenId) external payable
     tokenExists(_tokenId)
     nonReentrant {
         uint256 ethPrice = getTokenETHPrice(_tokenId);
@@ -172,8 +172,8 @@ contract Collect9Market is Ownable, ReentrancyGuard {
         delete listedTokens[_tokenId];
         delete tokenInfo[_tokenId];
         require(!listedTokens[_tokenId], "Failed to remove token listing.");
-        IERC721(_contractAddress).safeTransferFrom(_buyerAddress, msg.sender, _tokenId);
-        emit TokenBought(msg.sender, _buyerAddress, _tokenId, msg.value);
+        IERC721(_contractAddress).safeTransferFrom(_minterAddress, msg.sender, _tokenId);
+        emit TokenBought(msg.sender, _minterAddress, _tokenId, msg.value);
     }
 
     /**
